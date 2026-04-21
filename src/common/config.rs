@@ -29,6 +29,8 @@ pub struct Config {
     /// Timeout in seconds for connecting to target servers
     #[serde(default = "default_connect_timeout")]
     pub connect_timeout: u64,
+    #[serde(default)]
+    pub base_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

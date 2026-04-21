@@ -52,6 +52,10 @@ struct Args {
     /// Timeout in seconds for connecting to target servers
     #[arg(long, value_name = "SECONDS")]
     connect_timeout: Option<u64>,
+
+    /// Base path to use for requests with relative paths (HTTP only)
+    #[arg(long, value_name = "BASE_PATH")]
+    base_path: Option<String>,
 }
 
 #[tokio::main]
@@ -80,6 +84,9 @@ async fn main() {
     }
     if let Some(connect_timeout) = args.connect_timeout {
         config.connect_timeout = connect_timeout;
+    }
+    if let Some(base_path) = args.base_path {
+        config.base_path = Some(base_path);
     }
 
     if let Err(e) = config.validate() {
@@ -114,12 +121,16 @@ async fn main() {
     println!("Proxy server listening on {}", config.listen_address);
     println!("Supporting SOCKS5 and HTTP proxy protocols");
 
-    let proxy = TcpProxy::new(
+    let mut proxy = TcpProxy::new(
         auth_manager,
         config.buffer_size,
         config.max_connections,
         Duration::from_secs(config.connect_timeout),
     );
+
+    if let Some(base_path) = config.base_path {
+        proxy.set_base_path(base_path);
+    }
 
     proxy.run(listener).await;
 }

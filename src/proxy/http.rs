@@ -87,6 +87,7 @@ pub struct HttpProxy {
     auth_manager: Arc<AuthManager>,
     buffer_size: usize,
     connect_timeout: Duration,
+    base_path: Option<Arc<String>>,
 }
 
 impl HttpProxy {
@@ -99,6 +100,21 @@ impl HttpProxy {
             auth_manager,
             buffer_size,
             connect_timeout,
+            base_path: None,
+        }
+    }
+
+    pub fn new_with_base_path(
+        auth_manager: Arc<AuthManager>,
+        buffer_size: usize,
+        connect_timeout: Duration,
+        base_path: Arc<String>,
+    ) -> Self {
+        HttpProxy {
+            auth_manager,
+            buffer_size,
+            connect_timeout,
+            base_path: Some(base_path),
         }
     }
 
@@ -233,7 +249,19 @@ impl HttpProxy {
         conn: &mut BufferedConnection,
         request: &HttpRequest,
     ) -> Result<(), HttpProxyError> {
-        let url = url::Url::parse(&request.path)?;
+        let url = if request.path.starts_with("/") {
+            // For relative paths, check if we have a base path configured to resolve against
+            if let Some(base) = &self.base_path {
+                url::Url::parse(&format!("{}{}", base, request.path))
+            } else {
+                return Err(HttpProxyError::InvalidRequest(
+                    "Relative URL without base path configured".to_string(),
+                ));
+            }
+        } else {
+            url::Url::parse(&request.path)
+        }?;
+
         let host = url
             .host_str()
             .ok_or_else(|| HttpProxyError::InvalidRequest("No host in URL".to_string()))?;
@@ -267,7 +295,8 @@ impl HttpProxy {
 
         #[cfg(feature = "upgrade")]
         if url.scheme() == "http" {
-            let https_url = url::Url::parse(&request.path.replacen("http://", "https://", 1))?;
+            let mut https_url = url.clone();
+            https_url.set_scheme("https").unwrap();
             let https_port = https_url.port_or_known_default().unwrap_or(443);
             let target_addr = format!("{}:{}", host, https_port);
             let target_stream =

@@ -31,15 +31,18 @@ pub struct TcpProxy {
     buffer_size: usize,
     semaphore: Arc<Semaphore>,
     connect_timeout: Duration,
+    base_path: Option<Arc<String>>,
 }
 
 impl Default for TcpProxy {
     fn default() -> Self {
-        TcpProxy::new_no_auth(
-            config::default_buffer_size(),
-            config::default_max_connections(),
-            Duration::from_secs(config::default_connect_timeout()),
-        )
+        TcpProxy {
+            auth_manager: Arc::default(),
+            buffer_size: config::default_buffer_size(),
+            semaphore: Arc::new(Semaphore::new(config::default_max_connections())),
+            connect_timeout: Duration::from_secs(config::default_connect_timeout()),
+            base_path: None,
+        }
     }
 }
 
@@ -55,20 +58,12 @@ impl TcpProxy {
             buffer_size,
             semaphore: Arc::new(Semaphore::new(max_connections)),
             connect_timeout,
+            base_path: None,
         }
     }
 
-    pub fn new_no_auth(
-        buffer_size: usize,
-        max_connections: usize,
-        connect_timeout: Duration,
-    ) -> Self {
-        TcpProxy::new(
-            Arc::default(),
-            buffer_size,
-            max_connections,
-            connect_timeout,
-        )
+    pub fn set_base_path(&mut self, base_path: String) {
+        self.base_path = Some(Arc::new(base_path));
     }
 
     /// Accept connections until Ctrl-C / SIGINT is received.
@@ -94,6 +89,7 @@ impl TcpProxy {
                             let auth_manager = self.auth_manager.clone();
                             let buffer_size = self.buffer_size;
                             let connect_timeout = self.connect_timeout;
+                            let base_path = self.base_path.clone();
                             task::spawn(async move {
                                 if let Err(e) = Self::handle_connection(
                                     stream,
@@ -101,6 +97,7 @@ impl TcpProxy {
                                     auth_manager,
                                     buffer_size,
                                     connect_timeout,
+                                    base_path,
                                 )
                                 .await
                                 {
@@ -131,6 +128,7 @@ impl TcpProxy {
         auth_manager: Arc<AuthManager>,
         buffer_size: usize,
         connect_timeout: Duration,
+        base_path: Option<Arc<String>>,
     ) -> Result<(), TcpProxyError> {
         stream.set_nodelay(true)?;
         let mut conn = BufferedConnection::new(stream, buffer_size);
@@ -156,7 +154,15 @@ impl TcpProxy {
             // HTTP methods start with ASCII letters
             b'A'..=b'Z' | b'a'..=b'z' => {
                 info!("HTTP connection from {}", addr);
-                let http_proxy = HttpProxy::new(auth_manager, buffer_size, connect_timeout);
+                let http_proxy = match base_path {
+                    Some(path) => HttpProxy::new_with_base_path(
+                        auth_manager,
+                        buffer_size,
+                        connect_timeout,
+                        path,
+                    ),
+                    None => HttpProxy::new(auth_manager, buffer_size, connect_timeout),
+                };
                 http_proxy.handle_connection(&mut conn).await?;
             }
             other => {

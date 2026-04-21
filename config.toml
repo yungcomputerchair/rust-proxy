@@ -6,6 +6,9 @@ listen_address = '127.0.0.1:1080'
 # Buffer size (1-65536)
 buffer_size = 4096
 
+# Base path to use for requests with relative paths (HTTP only)
+# base_path = "http://my_base_path"
+
 # User authentication information
 [users]
 # Format: username = 'password'
