@@ -7,6 +7,7 @@ use tokio::sync::Semaphore;
 use tokio::task;
 
 use crate::common::auth::AuthManager;
+use crate::common::config;
 use crate::net::conn::BufferedConnection;
 use crate::proxy::http::HttpProxy;
 use crate::proxy::socks5::Socks5Proxy;
@@ -30,6 +31,16 @@ pub struct TcpProxy {
     buffer_size: usize,
     semaphore: Arc<Semaphore>,
     connect_timeout: Duration,
+}
+
+impl Default for TcpProxy {
+    fn default() -> Self {
+        TcpProxy::new_no_auth(
+            config::default_buffer_size(),
+            config::default_max_connections(),
+            Duration::from_secs(config::default_connect_timeout()),
+        )
+    }
 }
 
 impl TcpProxy {

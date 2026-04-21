@@ -82,15 +82,15 @@ fn default_file_size() -> u64 {
     10
 }
 
-fn default_buffer_size() -> usize {
+pub fn default_buffer_size() -> usize {
     4096
 }
 
-fn default_max_connections() -> usize {
+pub fn default_max_connections() -> usize {
     1024
 }
 
-fn default_connect_timeout() -> u64 {
+pub fn default_connect_timeout() -> u64 {
     10
 }
 
