@@ -1,16 +1,13 @@
-use crate::common::auth::AuthManager;
-use crate::common::config::Config;
-use crate::common::logger;
-use crate::proxy::tcp::TcpProxy;
 use clap::Parser;
 use log::LevelFilter;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 
-mod common;
-mod net;
-mod proxy;
+use rust_proxy::common::auth::AuthManager;
+use rust_proxy::common::config::Config;
+use rust_proxy::common::logger;
+use rust_proxy::proxy::tcp::TcpProxy;
 
 /// Fallback logger that writes to stderr when log4rs fails to initialise.
 struct SimpleLogger;
