@@ -24,3 +24,11 @@ base64 = "0.22"
 bcrypt = "0.17"
 # Configuration file handling
 config = "0.15"
+# TLS support (optional)
+tokio-rustls = { version = "0.26", optional = true }
+rustls = { version = "0.23", optional = true }
+webpki-roots = { version = "0.26", optional = true }
+
+[features]
+default = []
+upgrade = ["tokio-rustls", "rustls", "webpki-roots"]

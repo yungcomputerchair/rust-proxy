@@ -4,15 +4,15 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
 
-pub struct BufferedConnection {
-    stream: TcpStream,
+pub struct BufferedConnection<S = TcpStream> {
+    stream: S,
     read_buffer: Vec<u8>,
     temp_buffer: Vec<u8>,
     buffer_size: usize,
 }
 
-impl BufferedConnection {
-    pub fn new(stream: TcpStream, buffer_size: usize) -> Self {
+impl<S: AsyncRead + AsyncWrite + Unpin> BufferedConnection<S> {
+    pub fn new(stream: S, buffer_size: usize) -> Self {
         BufferedConnection {
             stream,
             read_buffer: Vec::with_capacity(buffer_size),
@@ -127,7 +127,7 @@ impl BufferedConnection {
 /// Residual data in the read buffer is drained first before delegating to
 /// the underlying stream, so that `tokio::io::copy_bidirectional` works
 /// correctly after protocol negotiation.
-impl AsyncRead for BufferedConnection {
+impl<S: AsyncRead + Unpin> AsyncRead for BufferedConnection<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -146,7 +146,7 @@ impl AsyncRead for BufferedConnection {
     }
 }
 
-impl AsyncWrite for BufferedConnection {
+impl<S: AsyncWrite + Unpin> AsyncWrite for BufferedConnection<S> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

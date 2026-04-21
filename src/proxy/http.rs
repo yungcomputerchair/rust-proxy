@@ -9,6 +9,13 @@ use crate::common::auth::AuthManager;
 use crate::net::conn::BufferedConnection;
 use crate::proxy::forward;
 
+#[cfg(feature = "upgrade")]
+use rustls::ClientConfig;
+#[cfg(feature = "upgrade")]
+use std::sync::LazyLock;
+#[cfg(feature = "upgrade")]
+use tokio_rustls::TlsConnector;
+
 #[derive(Error, Debug)]
 pub enum HttpProxyError {
     #[error("IO error: {0}")]
@@ -29,6 +36,12 @@ pub enum HttpProxyError {
     InvalidUtf8(#[from] std::string::FromUtf8Error),
     #[error("Invalid base64 encoding: {0}")]
     InvalidBase64(#[from] base64::DecodeError),
+    #[cfg(feature = "upgrade")]
+    #[error("TLS error: {0}")]
+    TlsError(#[from] rustls::Error),
+    #[cfg(feature = "upgrade")]
+    #[error("Invalid DNS name: {0}")]
+    InvalidDnsName(#[from] rustls::pki_types::InvalidDnsNameError),
 }
 
 struct HttpHeader {
@@ -59,6 +72,16 @@ const CONNECT_OK: &[u8] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
 const PROXY_AUTH_REQUIRED: &[u8] = b"HTTP/1.1 407 Proxy Authentication Required\r\n\
     Proxy-Authenticate: Basic realm=\"Proxy\"\r\n\
     Content-Length: 0\r\n\r\n";
+
+#[cfg(feature = "upgrade")]
+static TLS_CONNECTOR: LazyLock<TlsConnector> = LazyLock::new(|| {
+    let root_store =
+        rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let config = ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+    TlsConnector::from(Arc::new(config))
+});
 
 pub struct HttpProxy {
     auth_manager: Arc<AuthManager>,
@@ -214,15 +237,6 @@ impl HttpProxy {
         let host = url
             .host_str()
             .ok_or_else(|| HttpProxyError::InvalidRequest("No host in URL".to_string()))?;
-        let port = url
-            .port_or_known_default()
-            .ok_or_else(|| HttpProxyError::InvalidRequest("No port in URL".to_string()))?;
-
-        let target_addr = format!("{}:{}", host, port);
-        let target_stream =
-            forward::connect_with_timeout(&target_addr, self.connect_timeout).await?;
-
-        let mut target_conn = BufferedConnection::new(target_stream, self.buffer_size);
 
         let relative_path = match url.query() {
             None => url.path().to_string(),
@@ -251,6 +265,32 @@ impl HttpProxy {
             request_data.extend_from_slice(&request.body);
         }
 
+        #[cfg(feature = "upgrade")]
+        if url.scheme() == "http" {
+            let https_url = url::Url::parse(&request.path.replacen("http://", "https://", 1))?;
+            let https_port = https_url.port_or_known_default().unwrap_or(443);
+            let target_addr = format!("{}:{}", host, https_port);
+            let target_stream =
+                forward::connect_with_timeout(&target_addr, self.connect_timeout).await?;
+            let server_name = rustls::pki_types::ServerName::try_from(host.to_string())?;
+            let tls_stream = TLS_CONNECTOR.connect(server_name, target_stream).await?;
+            let mut target_conn = BufferedConnection::new(tls_stream, self.buffer_size);
+            target_conn.write(&request_data).await?;
+            info!("HTTP->HTTPS {} {}", request.method, request.path);
+            tokio::io::copy(&mut target_conn, conn).await?;
+            conn.shutdown().await?;
+            return Ok(());
+        }
+
+        let port = url
+            .port_or_known_default()
+            .ok_or_else(|| HttpProxyError::InvalidRequest("No port in URL".to_string()))?;
+
+        let target_addr = format!("{}:{}", host, port);
+        let target_stream =
+            forward::connect_with_timeout(&target_addr, self.connect_timeout).await?;
+
+        let mut target_conn = BufferedConnection::new(target_stream, self.buffer_size);
         target_conn.write(&request_data).await?;
         info!("HTTP {} {}", request.method, request.path);
 
