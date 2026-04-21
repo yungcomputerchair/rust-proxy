@@ -132,5 +132,15 @@ async fn main() {
         proxy.set_base_path(base_path);
     }
 
-    proxy.run(listener).await;
+    loop {
+        tokio::select! {
+            _ = proxy.run(&listener) => {},
+            _ = tokio::signal::ctrl_c() => {
+                log::info!("Received shutdown signal");
+                break;
+            },
+        }
+    }
+
+    log::info!("Stopped accepting new connections");
 }

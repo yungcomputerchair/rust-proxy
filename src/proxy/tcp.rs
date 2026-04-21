@@ -67,59 +67,46 @@ impl TcpProxy {
     }
 
     /// Accept connections until Ctrl-C / SIGINT is received.
-    pub async fn run(&self, listener: TcpListener) {
+    pub async fn run(&self, listener: &TcpListener) {
         info!("TCP proxy listening on {}", listener.local_addr().unwrap());
 
-        let shutdown = tokio::signal::ctrl_c();
-        tokio::pin!(shutdown);
-
         loop {
-            tokio::select! {
-                result = listener.accept() => {
-                    match result {
-                        Ok((stream, addr)) => {
-                            let permit = match self.semaphore.clone().try_acquire_owned() {
-                                Ok(permit) => permit,
-                                Err(_) => {
-                                    log::warn!("Max connections reached, rejecting {}", addr);
-                                    drop(stream);
-                                    continue;
-                                }
-                            };
-                            let auth_manager = self.auth_manager.clone();
-                            let buffer_size = self.buffer_size;
-                            let connect_timeout = self.connect_timeout;
-                            let base_path = self.base_path.clone();
-                            task::spawn(async move {
-                                if let Err(e) = Self::handle_connection(
-                                    stream,
-                                    addr,
-                                    auth_manager,
-                                    buffer_size,
-                                    connect_timeout,
-                                    base_path,
-                                )
-                                .await
-                                {
-                                    log::error!("Connection error from {}: {}", addr, e);
-                                }
-                                drop(permit);
-                            });
+            match listener.accept().await {
+                Ok((stream, addr)) => {
+                    let permit = match self.semaphore.clone().try_acquire_owned() {
+                        Ok(permit) => permit,
+                        Err(_) => {
+                            log::warn!("Max connections reached, rejecting {}", addr);
+                            drop(stream);
+                            continue;
                         }
-                        Err(e) => {
-                            log::error!("Accept error: {}", e);
-                            tokio::time::sleep(Duration::from_millis(100)).await;
+                    };
+                    let auth_manager = self.auth_manager.clone();
+                    let buffer_size = self.buffer_size;
+                    let connect_timeout = self.connect_timeout;
+                    let base_path = self.base_path.clone();
+                    task::spawn(async move {
+                        if let Err(e) = Self::handle_connection(
+                            stream,
+                            addr,
+                            auth_manager,
+                            buffer_size,
+                            connect_timeout,
+                            base_path,
+                        )
+                        .await
+                        {
+                            log::error!("Connection error from {}: {}", addr, e);
                         }
-                    }
+                        drop(permit);
+                    });
                 }
-                _ = &mut shutdown => {
-                    info!("Received shutdown signal");
-                    break;
+                Err(e) => {
+                    log::error!("Accept error: {}", e);
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }
         }
-
-        info!("Stopped accepting new connections");
     }
 
     async fn handle_connection(
