@@ -10,6 +10,7 @@ pub enum AuthError {
     AuthenticationFailed,
 }
 
+#[derive(Default)]
 pub struct AuthManager {
     users: HashMap<String, String>,
 }

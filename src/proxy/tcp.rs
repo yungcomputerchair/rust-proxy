@@ -47,6 +47,19 @@ impl TcpProxy {
         }
     }
 
+    pub fn new_no_auth(
+        buffer_size: usize,
+        max_connections: usize,
+        connect_timeout: Duration,
+    ) -> Self {
+        TcpProxy::new(
+            Arc::default(),
+            buffer_size,
+            max_connections,
+            connect_timeout,
+        )
+    }
+
     /// Accept connections until Ctrl-C / SIGINT is received.
     pub async fn run(&self, listener: TcpListener) {
         info!("TCP proxy listening on {}", listener.local_addr().unwrap());
