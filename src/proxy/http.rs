@@ -283,8 +283,13 @@ impl HttpProxy {
         // Skip hop-by-hop proxy headers, preserve original order and case
         for header in &request.headers {
             if !header.name_lower.starts_with("proxy-") && header.name_lower != "connection" {
-                request_data
-                    .extend_from_slice(format!("{}: {}\r\n", header.name, header.value).as_bytes());
+                if header.name_lower == "host" {
+                    request_data.extend_from_slice(format!("Host: {}\r\n", host).as_bytes());
+                } else {
+                    request_data.extend_from_slice(
+                        format!("{}: {}\r\n", header.name, header.value).as_bytes(),
+                    );
+                }
             }
         }
         request_data.extend_from_slice(b"Connection: close\r\n\r\n");
